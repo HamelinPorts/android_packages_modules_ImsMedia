@@ -351,14 +351,22 @@ void ImsMediaAudioSource::openAudioStream()
 
     if (result == AAUDIO_OK && mAudioStream != nullptr)
     {
-        mBufferSize = AAudioStream_getFramesPerBurst(mAudioStream);
+        uint32_t burst = AAudioStream_getFramesPerBurst(mAudioStream);
+        // Cap our per-poll read to one ptime frame (e.g. 320 samples for
+        // 20 ms @ 16 kHz). Reading the full burst (often 40 ms = 640) makes
+        // MediaCodec emit two concatenated AMR-WB frames per output buffer,
+        // which AudioRtpPayloadEncoderNode cannot parse — it expects one
+        // frame per onDataFrame call and falls through to NoData otherwise.
+        uint32_t framesPerPtime = mSamplingRate * mPtime / 1000;
+        mBufferSize = (burst < framesPerPtime || framesPerPtime == 0)
+                ? burst : framesPerPtime;
         IMLOGD3("[openAudioStream] samplingRate[%d], framesPerBurst[%d], "
                 "performanceMode[%d]",
-                AAudioStream_getSampleRate(mAudioStream), mBufferSize,
+                AAudioStream_getSampleRate(mAudioStream), burst,
                 AAudioStream_getPerformanceMode(mAudioStream));
-        // Set the buffer size to the burst size - this will give us the minimum
-        // possible latency
-        AAudioStream_setBufferSizeInFrames(mAudioStream, mBufferSize);
+        IMLOGI2("[openAudioStream] read chunk = %u frames (ptime=%ums)",
+                mBufferSize, mPtime);
+        AAudioStream_setBufferSizeInFrames(mAudioStream, burst);
     }
     else
     {

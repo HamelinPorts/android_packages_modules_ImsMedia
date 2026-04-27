@@ -60,7 +60,20 @@ bool ImsMediaBitWriter::Write(uint32_t nValue, uint32_t nSize)
     // write to byte buffer
     while (mBitPos >= 8)
     {
-        mBuffer[mBytePos++] = (uint8_t)(mBitBuffer >> 24);
+        // OR-merge into the destination byte instead of overwriting.
+        // Two BitWriters frequently target the same backing buffer at
+        // overlapping byte offsets (e.g. AudioRtpPayloadEncoderNode uses
+        // separate header/payload writers that meet at the byte holding
+        // the F+FT+Q ToC bits and the first speech bits). With plain
+        // assignment, whichever writer spilled second clobbered the
+        // other's bits — most visibly turning AMR-WB FT=15 NoData frames
+        // into wire FT=14 SPEECH_LOST when the payload writer's
+        // AddPadding spilled zeros over a header byte holding Q=1.
+        // The byte starts at zero (memset before encoding) so OR
+        // matches `=` on the first writer, and merges correctly on
+        // subsequent ones. Flush() already uses `+=` for the same
+        // reason; this brings the spill path in line.
+        mBuffer[mBytePos++] |= (uint8_t)(mBitBuffer >> 24);
         mBitBuffer <<= 8;
         mBitPos -= 8;
     }
