@@ -241,6 +241,15 @@ void AudioRtpPayloadDecoderNode::DecodePayloadAmr(uint8_t* pData, uint32_t nData
         }
 
         mListFrameType.pop_front();
+        // BitWriter::Write OR-merges into the destination byte (see
+        // ImsMediaBitWriter.cpp). The buffer is reused across frames, so
+        // without zeroing here the new frame's ToC byte OR's onto the
+        // previous frame's ToC, producing FT values that index into
+        // future-use range (10..13) and trip C2SoftAmrWbDec's "illegal
+        // AMR frame mode" check. Speech bytes (mPayload[1..]) are
+        // overwritten by ReadByteBuffer below, so only mPayload[0] needs
+        // clearing — but zero the whole buffer for defense-in-depth.
+        memset(mPayload, 0, sizeof(mPayload));
         mBitWriter.SetBuffer(mPayload, MAX_AUDIO_PAYLOAD_SIZE);
         uint32_t bufferSize = (dataBitSize + 7) >> 3;
 
@@ -685,6 +694,10 @@ void AudioRtpPayloadDecoderNode::DecodePayloadEvs(uint8_t* pData, uint32_t nData
                 nDataBitSize = ImsMediaAudioUtil::ConvertAmrWbModeToBitLen(toc_ft_b);
             }
 
+            // BitWriter::Write OR-merges; clear mPayload to avoid
+            // accumulating ToC bits across frames (see DecodePayloadAmr
+            // for the matching fix).
+            memset(mPayload, 0, sizeof(mPayload));
             mBitWriter.SetBuffer(mPayload, MAX_AUDIO_PAYLOAD_SIZE);
             uint32_t bufferSize = (nDataBitSize + 7) >> 3;
 
