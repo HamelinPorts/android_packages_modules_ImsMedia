@@ -194,10 +194,30 @@ bool ImsMediaAudioPlayer::Start()
         return false;
     }
 
+    // Use the same 10x timeout that ImsMediaAudioSource::Start uses on
+    // the capture side. On Samsung-RIL/Unisoc UMS512, an MO call's
+    // brief MODE_IN_CALL → MODE_IN_COMMUNICATION transition (Telecom
+    // races with the ConnectionService voip-flag handshake) leaves the
+    // SPRD AGDSP mid-scene-reload when this AAudio output stream is
+    // requested. The 1x = 100 ms wait reliably timed out on that path
+    // and led to RX silence for the whole call.
     result = AAudioStream_waitForStateChange(
-            mAudioStream, inputState, &nextState, AAUDIO_STATE_TIMEOUT_NANO);
+            mAudioStream, inputState, &nextState, 10 * AAUDIO_STATE_TIMEOUT_NANO);
 
-    if (result != AAUDIO_OK)
+    if (result == AAUDIO_ERROR_TIMEOUT)
+    {
+        // Timeout doesn't mean the stream failed; the request was
+        // accepted and the HAL is still completing the transition.
+        // Don't tear down mCodec — codec lifecycle is independent of
+        // the AAudio sink, and deleting it leaves onDataFrame()'s
+        // mCodec==nullptr early-return permanently active for this
+        // session. If the stream truly fails, errorCallback will fire
+        // AAUDIO_ERROR_DISCONNECTED and restartAudioStream() recovers.
+        IMLOGW1("[Start] waitForStateChange timed out, proceeding "
+                "(state=%s)",
+                AAudio_convertStreamStateToText(nextState));
+    }
+    else if (result != AAUDIO_OK)
     {
         IMLOGE1("[Start] Error start stream[%s]", AAudio_convertResultToText(result));
         if (mCodecType == kAudioCodecAmr || mCodecType == kAudioCodecAmrWb)
@@ -209,8 +229,10 @@ bool ImsMediaAudioPlayer::Start()
         }
         return false;
     }
-
-    IMLOGI1("[Start] start stream state[%s]", AAudio_convertStreamStateToText(nextState));
+    else
+    {
+        IMLOGI1("[Start] start stream state[%s]", AAudio_convertStreamStateToText(nextState));
+    }
 
     if (mCodecType == kAudioCodecAmr || mCodecType == kAudioCodecAmrWb)
     {

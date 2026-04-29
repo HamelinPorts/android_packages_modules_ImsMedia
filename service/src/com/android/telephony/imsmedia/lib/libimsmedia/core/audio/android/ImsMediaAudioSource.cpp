@@ -149,7 +149,20 @@ bool ImsMediaAudioSource::Start()
     audioResult = AAudioStream_waitForStateChange(
             mAudioStream, inputState, &nextState, 10 * AAUDIO_STATE_TIMEOUT_NANO);
 
-    if (audioResult != AAUDIO_OK)
+    if (audioResult == AAUDIO_ERROR_TIMEOUT)
+    {
+        // Symmetric with ImsMediaAudioPlayer::Start. A timeout means
+        // the request was accepted but the HAL hasn't acknowledged
+        // STARTED yet — common on devices where setMode transitions
+        // (e.g. MODE_IN_CALL → MODE_IN_COMMUNICATION on MO calls)
+        // serialize behind a scene reload. Don't tear down mCodec,
+        // which is already started above; the read thread + AAudio
+        // errorCallback can recover via restartAudioStream().
+        IMLOGW1("[Start] waitForStateChange timed out, proceeding "
+                "(state=%s)",
+                AAudio_convertStreamStateToText(nextState));
+    }
+    else if (audioResult != AAUDIO_OK)
     {
         IMLOGE1("[Start] Error start stream[%s]", AAudio_convertResultToText(audioResult));
 
@@ -163,8 +176,10 @@ bool ImsMediaAudioSource::Start()
 
         return false;
     }
-
-    IMLOGI1("[Start] start stream state[%s]", AAudio_convertStreamStateToText(nextState));
+    else
+    {
+        IMLOGI1("[Start] start stream state[%s]", AAudio_convertStreamStateToText(nextState));
+    }
 
     // start audio read thread
     StartThread("ImsMediaAudioSource");
