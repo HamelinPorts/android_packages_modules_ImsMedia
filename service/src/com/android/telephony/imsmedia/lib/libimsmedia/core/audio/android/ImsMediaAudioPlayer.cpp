@@ -450,8 +450,16 @@ void ImsMediaAudioPlayer::openAudioStream()
     AAudioStreamBuilder_setFormat(builder, AAUDIO_FORMAT_PCM_I16);
     AAudioStreamBuilder_setChannelCount(builder, 1);
     AAudioStreamBuilder_setSampleRate(builder, mSamplingRate);
-    AAudioStreamBuilder_setSharingMode(builder, AAUDIO_SHARING_MODE_EXCLUSIVE);
-    AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
+    // Use SHARED + NONE so AAudio falls into AudioFlinger's standard
+    // device-selection path. EXCLUSIVE + LOW_LATENCY locks AAudio onto
+    // the MMAP fast path; MMAP isn't supported on Bluetooth SCO, so
+    // when an HFP headset is the active communication device the
+    // policy's preferredDeviceForStrategy(PHONE)=BT_SCO is silently
+    // bypassed and AAudio picks a built-in MMAP-capable output (the
+    // speaker on tablets) instead. Standard latency is fine for VoIP
+    // — the AMR encoder/jitter buffer dominates anyway.
+    AAudioStreamBuilder_setSharingMode(builder, AAUDIO_SHARING_MODE_SHARED);
+    AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_NONE);
     AAudioStreamBuilder_setUsage(builder, AAUDIO_USAGE_VOICE_COMMUNICATION);
     AAudioStreamBuilder_setErrorCallback(builder, audioErrorCallback, this);
 

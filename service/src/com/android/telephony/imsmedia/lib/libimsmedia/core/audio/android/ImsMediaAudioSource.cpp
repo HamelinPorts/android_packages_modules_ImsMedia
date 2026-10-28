@@ -354,8 +354,12 @@ void ImsMediaAudioSource::openAudioStream()
     AAudioStreamBuilder_setFormat(builder, AAUDIO_FORMAT_PCM_I16);
     AAudioStreamBuilder_setChannelCount(builder, 1);
     AAudioStreamBuilder_setSampleRate(builder, mSamplingRate);
-    AAudioStreamBuilder_setSharingMode(builder, AAUDIO_SHARING_MODE_EXCLUSIVE);
-    AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
+    // SHARED + NONE so the BT SCO mic path becomes selectable —
+    // see ImsMediaAudioPlayer.cpp for the rationale (MMAP is the
+    // capture symmetry: no MMAP on SCO, EXCLUSIVE+LOW_LATENCY locks
+    // AAudio off the SCO source onto the built-in mic).
+    AAudioStreamBuilder_setSharingMode(builder, AAUDIO_SHARING_MODE_SHARED);
+    AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_NONE);
     AAudioStreamBuilder_setUsage(builder, AAUDIO_USAGE_VOICE_COMMUNICATION);
     AAudioStreamBuilder_setErrorCallback(builder, audioErrorCallback, this);
     AAudioStreamBuilder_setPrivacySensitive(builder, true);
