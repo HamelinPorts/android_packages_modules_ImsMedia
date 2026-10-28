@@ -450,14 +450,14 @@ void ImsMediaAudioPlayer::openAudioStream()
     AAudioStreamBuilder_setFormat(builder, AAUDIO_FORMAT_PCM_I16);
     AAudioStreamBuilder_setChannelCount(builder, 1);
     AAudioStreamBuilder_setSampleRate(builder, mSamplingRate);
-    // Use SHARED + NONE so AAudio falls into AudioFlinger's standard
-    // device-selection path. EXCLUSIVE + LOW_LATENCY locks AAudio onto
-    // the MMAP fast path; MMAP isn't supported on Bluetooth SCO, so
-    // when an HFP headset is the active communication device the
-    // policy's preferredDeviceForStrategy(PHONE)=BT_SCO is silently
-    // bypassed and AAudio picks a built-in MMAP-capable output (the
-    // speaker on tablets) instead. Standard latency is fine for VoIP
-    // — the AMR encoder/jitter buffer dominates anyway.
+    // Keep voice calls on AudioFlinger's normal path (SHARED, no
+    // performance mode) so the audio policy keeps routing the stream and
+    // a mid-call setCommunicationDevice() change, e.g. to a Bluetooth HFP
+    // headset, is followed. MMAP streams stay bound to the endpoint they
+    // were opened on. Devices without MMAP (gta8) end up on the normal
+    // path anyway; this is defensive for devices that enable MMAP. The
+    // latency cost is negligible for VoLTE: packetisation and the jitter
+    // buffer dominate.
     AAudioStreamBuilder_setSharingMode(builder, AAUDIO_SHARING_MODE_SHARED);
     AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_NONE);
     AAudioStreamBuilder_setUsage(builder, AAUDIO_USAGE_VOICE_COMMUNICATION);

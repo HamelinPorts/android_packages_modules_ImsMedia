@@ -17,21 +17,31 @@ Upstream lives at:
 
 ## What we patch
 
-Currently one commit on top of upstream `android-16.0.0_r4`:
+Four commits on top of upstream `android-16.0.0_r4`, all in `libimsmedia`:
 
-* **`libimsmedia: cap AAudio capture read to one ptime frame`** — fixes
-  uplink audio on devices whose audio HAL exposes a capture burst larger
-  than the negotiated codec ptime (e.g. Unisoc UMS512, where the AGDSP
-  VoIP scene runs at a 40 ms period). The upstream code blindly uses
-  `AAudioStream_getFramesPerBurst()` as the per-poll read size, which
-  causes MediaCodec to emit two concatenated AMR-WB frames per output
-  buffer; `AudioRtpPayloadEncoderNode::EncodePayloadAmr` is a per-frame
-  parser and falls through to `kImsAudioAmrWbModeNoData` for any size
-  that does not match a single-frame entry in `gaAMRWBLen[]`. Result: 14-byte
-  RTP payloads with `FT=14` (SPEECH_LOST) — the far end hears silence on
-  every uplink frame. The fix caps the read to `mSamplingRate * mPtime / 1000`.
+* **`fix uplink AMR-WB on HALs whose burst != ptime`** — caps the AAudio
+  capture read to one ptime frame (`mSamplingRate * mPtime / 1000`).
+  Upstream reads `AAudioStream_getFramesPerBurst()` per poll; with a 40 ms
+  HAL burst (Unisoc UMS512 AGDSP VoIP scene) against a 20 ms ptime,
+  MediaCodec emits two AMR-WB frames per buffer, the per-frame payload
+  encoder maps them to NoData and the uplink is silent. Also makes
+  `ImsMediaBitWriter::Write()` OR-merge spilled bytes so the header and
+  payload writers sharing a byte stop clobbering each other.
+* **`clear AMR depacketizer payload buffer before each frame`** — the AMR
+  and EVS depacketizers reuse `mPayload` without re-zeroing; with the
+  OR-merging BitWriter, consecutive ToC bytes accumulate into an illegal
+  frame type and the downlink decoder stops.
+* **`tolerate AAudio waitForStateChange timeout in Start()`** — a start
+  timeout means the HAL is slow, not that the stream failed; keep the
+  codec instead of tearing it down (which silenced the downlink for the
+  rest of the call).
+* **`open AAudio streams SHARED so the policy keeps routing`** — opens
+  both streams SHARED / `PERFORMANCE_MODE_NONE` so voice calls stay on
+  AudioFlinger's normal path and follow `setCommunicationDevice()`
+  mid-call. No effect on devices without MMAP; defensive for those that
+  enable it.
 
-If this patch ever lands upstream, drop the commit and reset
+Drop each commit once its fix lands upstream; when none is left, reset
 `lineage-23.2` to the upstream branch we want to track.
 
 ## Rebasing onto a newer AOSP release
@@ -78,23 +88,23 @@ git push origin hamelinports/android-16.0.0_r5
 
 ## Manifest entry
 
-This repo is wired into the LineageOS build via
-`.repo/local_manifests/x205-ims.xml` in the device tree. The relevant
-project line is:
+A device's local manifest replaces the AOSP project with this fork, e.g.
+in `.repo/local_manifests/gta8.xml`:
 
 ```xml
+<remove-project name="platform/packages/modules/ImsMedia" />
 <project path="packages/modules/ImsMedia"
          name="android_packages_modules_ImsMedia"
-         remote="hamelinports" />
+         remote="gta8-hamelin" />
 ```
 
-The `hamelinports` remote already has `revision="lineage-23.2"`, so
-nothing else is needed in the manifest — `repo sync` picks up our patched
-branch by default.
+The remote (`https://github.com/HamelinPorts/`) carries
+`revision="lineage-23.2"`, so `repo sync` picks up our patched branch by
+default.
 
 ## Reporting upstream
 
-The read-chunk fix should eventually land in AOSP gerrit. When it does,
+These fixes should eventually land in AOSP gerrit. Once all have,
 this fork can be dropped entirely and the manifest reverted to AOSP. Until
 then, keep the commit message clear, the rationale linkable, and the
 patch small enough that an AOSP reviewer can see it as a one-liner-ish

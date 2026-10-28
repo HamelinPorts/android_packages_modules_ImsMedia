@@ -354,10 +354,10 @@ void ImsMediaAudioSource::openAudioStream()
     AAudioStreamBuilder_setFormat(builder, AAUDIO_FORMAT_PCM_I16);
     AAudioStreamBuilder_setChannelCount(builder, 1);
     AAudioStreamBuilder_setSampleRate(builder, mSamplingRate);
-    // SHARED + NONE so the BT SCO mic path becomes selectable —
-    // see ImsMediaAudioPlayer.cpp for the rationale (MMAP is the
-    // capture symmetry: no MMAP on SCO, EXCLUSIVE+LOW_LATENCY locks
-    // AAudio off the SCO source onto the built-in mic).
+    // Same reason as ImsMediaAudioPlayer::openAudioStream(): stay on the
+    // normal record path so the audio policy keeps routing capture to the
+    // communication device (e.g. the HFP headset mic). Defensive for
+    // devices that enable MMAP; gta8 has none.
     AAudioStreamBuilder_setSharingMode(builder, AAUDIO_SHARING_MODE_SHARED);
     AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_NONE);
     AAudioStreamBuilder_setUsage(builder, AAUDIO_USAGE_VOICE_COMMUNICATION);
